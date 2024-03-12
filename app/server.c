@@ -59,12 +59,36 @@ int main() {
 	}
 	printf("Client connected\n");
 
-	int bytes_sent = send(client_fd, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
-	if (bytes_sent == -1) {
-		printf("Send failed\n");
+	char read_buffer[1024];
+
+	int bytes_recieved = recv(client_fd, read_buffer, 1024, 0);
+	if (bytes_recieved == -1) {
+		printf("Recieve failed\n");
+		return 1;
 	}
 
-	printf("Response sent\n");
+	//Extract path
+	char *req_path = strtok(read_buffer, " ");
+	req_path = strtok(0, " ");
+
+	if (!strcmp(req_path, "/")) {
+		int bytes_sent = send(client_fd, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
+		if (bytes_sent == -1) {
+			printf("Send failed\n");
+			return 1;
+		}
+
+		printf("Response sent\n");
+	} else {
+		int bytes_sent = send(client_fd, "HTTP/1.1 404 Not Found\r\n\r\n", 26, 0);
+		if (bytes_sent == -1) {
+			printf("Send failed\n");
+			return 1;
+		}
+
+		printf("Response sent\n");
+
+	}
 
 	close(server_fd);
 

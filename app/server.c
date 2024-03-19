@@ -68,11 +68,45 @@ int main() {
 	}
 
 	//Extract path
-	char *req_path = strtok(read_buffer, " ");
-	req_path = strtok(0, " ");
+	char *http_method = strtok(read_buffer, " ");
+	char *path = strtok(0, " ");
 
-	if (!strcmp(req_path, "/")) {
+	printf("Path is %s\n", path);
+	printf("Path length is %lu\n", strlen(path));
+
+	char *data = strstr(path, "/echo/");
+	printf("Data is %s\n", data);
+
+	if (!strcmp(path, "/")) {
 		int bytes_sent = send(client_fd, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
+		if (bytes_sent == -1) {
+			printf("Send failed\n");
+			return 1;
+		}
+
+		printf("Response sent\n");
+
+	} else if (data != 0) {
+		char *content = data + strlen("/echo/");
+		char response[1024];
+
+		printf("Content is %s\n", content);
+
+		if (sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %lu\r\n\r\n%s", strlen(content), content) < 0) {
+			printf("Sprint failed\n");
+			int bytes_sent = send(client_fd, "HTTP/1.1 500 Internal Server Error\r\n\r\n", 33, 0);
+			if (bytes_sent == -1) {
+				printf("Send failed\n");
+				return 1;
+			}
+
+			printf("Response sent\n");
+
+			close(server_fd);
+			return 1;
+		}
+
+		int bytes_sent = send(client_fd, response, strlen(response), 0);
 		if (bytes_sent == -1) {
 			printf("Send failed\n");
 			return 1;
@@ -87,7 +121,6 @@ int main() {
 		}
 
 		printf("Response sent\n");
-
 	}
 
 	close(server_fd);

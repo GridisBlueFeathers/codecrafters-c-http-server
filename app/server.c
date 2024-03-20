@@ -7,7 +7,8 @@
 #include <errno.h>
 #include <unistd.h>
 
-int send_five_hundred(int client_fd, int server_fd);
+int send_five_hundred(int client_fd);
+void handle_connection(int client_fd);
 
 int main() {
 	// Disable output buffering
@@ -17,8 +18,7 @@ int main() {
 	printf("Logs from your program will appear here!\n");
 
 	// Uncomment this block to pass the first stage
-	int server_fd, client_addr_len;
-	struct sockaddr_in client_addr;
+	int server_fd;
 
 	server_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (server_fd == -1) {
@@ -45,29 +45,57 @@ int main() {
 	 	return 1;
 	}
 
-	int connection_backlog = 5;
+	int connection_backlog = 12;
 	if (listen(server_fd, connection_backlog) != 0) {
 		printf("Listen failed: %s \n", strerror(errno));
 		return 1;
 	}
 
-	printf("Waiting for a client to connect...\n");
-	client_addr_len = sizeof(client_addr);
+	while (1) {
+		printf("Waiting for a client to connect...\n");
 
-	int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
-	if (client_fd == -1) {
-		printf("Client connection failed\n");
+		struct sockaddr_in client_addr;
+		int client_addr_len = sizeof(client_addr);
+
+		int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+		if (client_fd == -1) {
+			printf("Client connection failed\n");
+			return 1;
+		}
+		printf("Client connected\n");
+		
+		if (!fork()) {
+			close(server_fd);
+			handle_connection(client_fd);
+			close(client_fd);
+			exit(0);
+		}
+		close(client_fd);
+	}
+
+	return 0;
+}
+
+int send_five_hundred(int client_fd) {
+	int bytes_sent = send(client_fd, "HTTP/1.1 500 Internal Server Error\r\n\r\n", 33, 0);
+	if (bytes_sent == -1) {
+		printf("Send failed\n");
 		return 1;
 	}
-	printf("Client connected\n");
 
+	printf("Response sent\n");
+
+	return 0;
+}
+
+void handle_connection(int client_fd) {
 	char read_buffer[1024];
 	char read_buffer_copy[1024]; 
 
 	int bytes_recieved = recv(client_fd, read_buffer, 1024, 0);
 	if (bytes_recieved == -1) {
 		printf("Recieve failed\n");
-		return 1;
+		return;
 	}
 
 	printf("Read buffer is %s\n", read_buffer);
@@ -84,7 +112,7 @@ int main() {
 		int bytes_sent = send(client_fd, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
 		if (bytes_sent == -1) {
 			printf("Send failed\n");
-			return 1;
+			return;
 		}
 
 		printf("Response sent\n");
@@ -99,14 +127,14 @@ int main() {
 
 		if (response_len < 0) {
 			printf("Sprint failed\n");
-			send_five_hundred(client_fd, server_fd);
-			return 1;
+			send_five_hundred(client_fd);
+			return;
 		}
 
 		int bytes_sent = send(client_fd, response, response_len, 0);
 		if (bytes_sent == -1) {
 			printf("Send failed\n");
-			return 1;
+			return;
 		}
 
 		printf("Response sent\n");
@@ -127,14 +155,14 @@ int main() {
 
 		if (response_len < 0) {
 			printf("Sprint failed\n");
-			send_five_hundred(client_fd, server_fd);
-			return 1;
+			send_five_hundred(client_fd);
+			return;
 		}
 
 		int bytes_sent = send(client_fd, response, response_len, 0);
 		if (bytes_sent == -1) {
 			printf("Send failed\n");
-			return 1;
+			return;
 		}
 
 		printf("Response sent\n");
@@ -142,26 +170,9 @@ int main() {
 		int bytes_sent = send(client_fd, "HTTP/1.1 404 Not Found\r\n\r\n", 26, 0);
 		if (bytes_sent == -1) {
 			printf("Send failed\n");
-			return 1;
+			return;
 		}
 
 		printf("Response sent\n");
 	}
-
-	close(server_fd);
-
-	return 0;
-}
-
-int send_five_hundred(int client_fd, int server_fd) {
-	int bytes_sent = send(client_fd, "HTTP/1.1 500 Internal Server Error\r\n\r\n", 33, 0);
-	if (bytes_sent == -1) {
-		printf("Send failed\n");
-		return 1;
-	}
-
-	printf("Response sent\n");
-
-	close(server_fd);
-	return 0;
 }

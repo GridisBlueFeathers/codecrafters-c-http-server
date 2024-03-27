@@ -10,7 +10,24 @@
 int send_five_hundred(int client_fd);
 void handle_connection(int client_fd);
 
-int main() {
+int main(int argc, char **argv) {
+	char *directory = ".";
+
+	int i = 1;
+	if (argc >= 3) {
+		while (i < argc - 1 && strcmp(argv[i], "--directory"))
+			i++;
+
+		directory = argv[i + 1];
+
+	} 
+
+	printf("Settiing up directory in %s\n", directory);
+
+	if (chdir(directory) < 0) {
+		printf("Failed changing directory\n");
+		return 1;
+	}
 	// Disable output buffering
 	setbuf(stdout, NULL);
 
@@ -98,7 +115,7 @@ void handle_connection(int client_fd) {
 		return;
 	}
 
-	printf("Read buffer is %s\n", read_buffer);
+	//printf("Read buffer is %s\n", read_buffer);
 	strcpy(read_buffer_copy, read_buffer);
 
 	//Extract path
@@ -117,7 +134,7 @@ void handle_connection(int client_fd) {
 
 		printf("Response sent\n");
 
-	} else if (strstr(path, "/echo/")) {
+	} else if (!strncmp(path, "/echo/", 6)) {
 		char response[1024];
 		char *content = strstr(path, "/echo/") + strlen("/echo/");
 
@@ -138,7 +155,8 @@ void handle_connection(int client_fd) {
 		}
 
 		printf("Response sent\n");
-	} else if (strstr(path, "/user-agent") != 0){ 
+
+	} else if (!strcmp(path, "/user-agent")) { 
 		char user_agent[128];
 		char response[1024];
 		char *user_agent_read = strstr(read_buffer, "User-Agent: ") + strlen("User-Agent: ");
@@ -159,6 +177,59 @@ void handle_connection(int client_fd) {
 			return;
 		}
 
+		int bytes_sent = send(client_fd, response, response_len, 0);
+		if (bytes_sent == -1) {
+			printf("Send failed\n");
+			return;
+		}
+
+		printf("Response sent\n");
+
+	} else if (!strncmp(path, "/files/", 7) && !strcmp(http_method, "GET")) {
+		char *file_name = strstr(path, "/files/") + strlen("/files/");
+
+		FILE *file = fopen(file_name, "rb");
+		if (!file) {
+			printf("File not found\n");
+
+			int bytes_sent = send(client_fd, "HTTP/1.1 404 Not Found\r\n\r\n", 26, 0);
+			if (bytes_sent == -1) {
+				printf("Send failed\n");
+				return ;
+			}
+
+			printf("Response sent\n");
+			return ;
+		}
+
+		if (fseek(file, 0, SEEK_END) < 0) {
+			printf("Error reading document\n");
+			send_five_hundred(client_fd);
+			return ;
+		}
+
+		size_t file_size = ftell(file);
+
+		rewind(file);
+
+		char *file_data = (char *)malloc(file_size);
+		if (fread(file_data, 1, file_size, file) != file_size) {
+			printf("Error reading document\n");
+			send_five_hundred(client_fd);
+			return ;
+		}
+
+		fclose(file);
+
+		char response[1024];
+
+		int response_len = sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %lu\r\n\r\n%s", file_size, file_data);
+		if (response_len < 0) {
+			printf("Sprint failed\n");
+			send_five_hundred(client_fd);
+			return;
+		}
+		
 		int bytes_sent = send(client_fd, response, response_len, 0);
 		if (bytes_sent == -1) {
 			printf("Send failed\n");

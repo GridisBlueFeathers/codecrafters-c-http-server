@@ -123,6 +123,7 @@ void handle_connection(int client_fd) {
 	char *path = strtok(0, " ");
 
 	printf("Path is %s\n", path);
+	printf("Method is %s\n", http_method);
 	//printf("Path length is %lu\n", strlen(path));
 
 	if (!strcmp(path, "/")) {
@@ -185,58 +186,116 @@ void handle_connection(int client_fd) {
 
 		printf("Response sent\n");
 
-	} else if (!strncmp(path, "/files/", 7) && !strcmp(http_method, "GET")) {
-		char *file_name = strstr(path, "/files/") + strlen("/files/");
+	} else if (!strncmp(path, "/files/", 7)) {
+		if (!strcmp(http_method, "GET")) {
+			char *file_name = strstr(path, "/files/") + strlen("/files/");
 
-		FILE *file = fopen(file_name, "rb");
-		if (!file) {
-			printf("File not found\n");
+			FILE *file = fopen(file_name, "rb");
+			if (!file) {
+				printf("File not found\n");
 
-			int bytes_sent = send(client_fd, "HTTP/1.1 404 Not Found\r\n\r\n", 26, 0);
-			if (bytes_sent == -1) {
-				printf("Send failed\n");
+				int bytes_sent = send(client_fd, "HTTP/1.1 404 Not Found\r\n\r\n", 26, 0);
+				if (bytes_sent == -1) {
+					printf("Send failed\n");
+					return ;
+				}
+
+				printf("Response sent\n");
 				return ;
 			}
 
+			if (fseek(file, 0, SEEK_END) < 0) {
+				printf("Error reading document\n");
+				send_five_hundred(client_fd);
+				return ;
+			}
+
+			size_t file_size = ftell(file);
+
+			rewind(file);
+
+			char *file_data = (char *)malloc(file_size);
+			if (!file_data) {
+				printf("Memory for file data was not allocated\n");
+				send_five_hundred(client_fd);
+				return;
+			}
+
+			if (fread(file_data, 1, file_size, file) != file_size) {
+				printf("Error reading document\n");
+				send_five_hundred(client_fd);
+				return ;
+			}
+
+			fclose(file);
+
+			char response[1024];
+
+			int response_len = sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %lu\r\n\r\n%s", file_size, file_data);
+			if (response_len < 0) {
+				printf("Sprint failed\n");
+				send_five_hundred(client_fd);
+				return;
+			}
+			
+			int bytes_sent = send(client_fd, response, response_len, 0);
+			if (bytes_sent == -1) {
+				printf("Send failed\n");
+				return;
+			}
+
 			printf("Response sent\n");
-			return ;
+		} else if (!strcmp(http_method, "POST")) {
+			char file_len_str[128];
+
+			char *file_len_request = strstr(read_buffer, "Content-Length: ") + strlen("Content-Length: ");
+			int i;
+
+			i = 0;
+			while (file_len_request[i] != '\r' && file_len_request[i + 1] != '\n')
+				i++;
+
+			strncpy(file_len_str, file_len_request, i);
+
+			size_t file_len = atoi(file_len_str);
+			char *file_content = strstr(read_buffer, "\r\n\r\n") + 4;
+			char *file_name = strstr(path, "/files/") + strlen("/files/");
+
+			printf("File content is:\n\n%s\n", file_content);
+			FILE *file = fopen(file_name, "wb");
+			if (!file) {
+				printf("Can not create the file\n");
+				send_five_hundred(client_fd);
+				return ;
+			}
+
+			printf("File was created\n");
+
+			if (fwrite(file_content, 1, file_len, file) != file_len) {
+				printf("Error writing file\n");
+				send_five_hundred(client_fd);
+				return ;
+			}
+
+			fclose(file);
+			
+			char response[1024];
+			int response_len = sprintf(response, "HTTP/1.1 201 Created\r\nContent-Type: application/octet-stream\r\nContent-Length: %lu\r\n\r\n%s", file_len, file_content);
+			if (response_len < 0) {
+				printf("Sprint failed\n");
+				send_five_hundred(client_fd);
+				return;
+			}
+			
+			int bytes_sent = send(client_fd, response, response_len, 0);
+			if (bytes_sent == -1) {
+				printf("Send failed\n");
+				return;
+			}
+
+			printf("Response sent\n");
+
 		}
-
-		if (fseek(file, 0, SEEK_END) < 0) {
-			printf("Error reading document\n");
-			send_five_hundred(client_fd);
-			return ;
-		}
-
-		size_t file_size = ftell(file);
-
-		rewind(file);
-
-		char *file_data = (char *)malloc(file_size);
-		if (fread(file_data, 1, file_size, file) != file_size) {
-			printf("Error reading document\n");
-			send_five_hundred(client_fd);
-			return ;
-		}
-
-		fclose(file);
-
-		char response[1024];
-
-		int response_len = sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %lu\r\n\r\n%s", file_size, file_data);
-		if (response_len < 0) {
-			printf("Sprint failed\n");
-			send_five_hundred(client_fd);
-			return;
-		}
-		
-		int bytes_sent = send(client_fd, response, response_len, 0);
-		if (bytes_sent == -1) {
-			printf("Send failed\n");
-			return;
-		}
-
-		printf("Response sent\n");
 	} else {
 		int bytes_sent = send(client_fd, "HTTP/1.1 404 Not Found\r\n\r\n", 26, 0);
 		if (bytes_sent == -1) {
